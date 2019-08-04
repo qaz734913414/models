@@ -24,7 +24,12 @@ import tensorflow as tf
 
 from object_detection import model_hparams
 from object_detection import model_lib
+tf.logging.set_verbosity(tf.logging.INFO)
 
+import os
+#os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
+flags.DEFINE_string("gpu_id", '0', 'selected gpu id')
 flags.DEFINE_string(
     'model_dir', None, 'Path to output model directory '
     'where event and checkpoint files will be written.')
@@ -57,6 +62,7 @@ FLAGS = flags.FLAGS
 
 
 def main(unused_argv):
+  os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.gpu_id)
   flags.mark_flag_as_required('model_dir')
   flags.mark_flag_as_required('pipeline_config_path')
   config = tf.estimator.RunConfig(model_dir=FLAGS.model_dir)

@@ -1,4 +1,4 @@
-# Copyright 2018 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2017 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""SSDFeatureExtractor for MobilenetV2 features."""
+"""SSDFeatureExtractor for MobilenetV1 features."""
 
 import tensorflow as tf
 
@@ -22,14 +22,13 @@ from object_detection.models import feature_map_generators
 from object_detection.utils import context_manager
 from object_detection.utils import ops
 from object_detection.utils import shape_utils
-from nets.mobilenet import mobilenet
-from nets.mobilenet import mobilenet_v2
+from nets import blazenet_v1
 
 slim = tf.contrib.slim
 
 
-class SSDMobileNetV2FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
-  """SSD Feature Extractor using MobilenetV2 features."""
+class SSDBlazeNetV1FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
+  """SSD Feature Extractor using MobilenetV1 features."""
 
   def __init__(self,
                is_training,
@@ -41,10 +40,7 @@ class SSDMobileNetV2FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
                use_explicit_padding=False,
                use_depthwise=False,
                override_base_feature_extractor_hyperparams=False):
-    """MobileNetV2 Feature Extractor for SSD Models.
-
-    Mobilenet v2 (experimental), designed by sandler@. More details can be found
-    in //knowledge/cerebra/brain/compression/mobilenet/mobilenet_experimental.py
+    """MobileNetV1 Feature Extractor for SSD Models.
 
     Args:
       is_training: whether the network is in training mode.
@@ -56,14 +52,15 @@ class SSDMobileNetV2FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
         and separable_conv2d ops in the layers that are added on top of the
         base feature extractor.
       reuse_weights: Whether to reuse variables. Default is None.
-      use_explicit_padding: Whether to use explicit padding when extracting
-        features. Default is False.
+      use_explicit_padding: Use 'VALID' padding for convolutions, but prepad
+        inputs so that the output dimensions are the same as if 'SAME' padding
+        were used.
       use_depthwise: Whether to use depthwise convolutions. Default is False.
       override_base_feature_extractor_hyperparams: Whether to override
         hyperparameters of the base feature extractor with the one from
         `conv_hyperparams_fn`.
     """
-    super(SSDMobileNetV2FeatureExtractor, self).__init__(
+    super(SSDBlazeNetV1FeatureExtractor, self).__init__(
         is_training=is_training,
         depth_multiplier=depth_multiplier,
         min_depth=min_depth,
@@ -88,12 +85,7 @@ class SSDMobileNetV2FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
       preprocessed_inputs: a [batch, height, width, channels] float tensor
         representing a batch of images.
     """
-    means  = tf.constant((123.00,123.00,123.00), dtype=tf.float32)
-    deriv  = tf.constant((58.000,58.000,58.000), dtype=tf.float32)
-    output = tf.subtract(resized_inputs, means)
-    output = tf.divide(output, deriv)
-    return output
-    #return (2.0 / 255.0) * resized_inputs - 1.0
+    return (2.0 / 255.0) * resized_inputs - 1.0
 
   def extract_features(self, preprocessed_inputs):
     """Extract features from preprocessed inputs.
@@ -110,32 +102,34 @@ class SSDMobileNetV2FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
         33, preprocessed_inputs)
 
     feature_map_layout = {
-        'from_layer': ['layer_15/expansion_output', 'layer_19', '', '', '', ''],
-        'layer_depth': [-1, -1, 512, 256, 256, 128],
-        'use_depthwise': self._use_depthwise,
+        'from_layer': ['Conv2d_11_pointwise', 'Conv2d_17_pointwise'],
+        'layer_depth': [-1, -1],
         'use_explicit_padding': self._use_explicit_padding,
+        'use_depthwise': self._use_depthwise,
     }
 
-    with tf.variable_scope('MobilenetV2', reuse=self._reuse_weights) as scope:
+    with tf.variable_scope('BlazenetV1',
+                           reuse=self._reuse_weights) as scope:
       with slim.arg_scope(
-          mobilenet_v2.training_scope(is_training=None, bn_decay=0.9997)), \
-          slim.arg_scope(
-              [mobilenet.depth_multiplier], min_depth=self._min_depth):
+          blazenet_v1.blazenet_v1_arg_scope(
+              is_training=None, regularize_depthwise=True)):
         with (slim.arg_scope(self._conv_hyperparams_fn())
-              if self._override_base_feature_extractor_hyperparams else
-              context_manager.IdentityContextManager()):
-          _, image_features = mobilenet_v2.mobilenet_base(
+              if self._override_base_feature_extractor_hyperparams
+              else context_manager.IdentityContextManager()):
+          _, image_features = blazenet_v1.blazenet_v1_base(
               ops.pad_to_multiple(preprocessed_inputs, self._pad_to_multiple),
-              final_endpoint='layer_19',
+              final_endpoint='Conv2d_17_pointwise',
+              min_depth=self._min_depth,
               depth_multiplier=self._depth_multiplier,
               use_explicit_padding=self._use_explicit_padding,
               scope=scope)
-        with slim.arg_scope(self._conv_hyperparams_fn()):
-          feature_maps = feature_map_generators.multi_resolution_feature_maps(
-              feature_map_layout=feature_map_layout,
-              depth_multiplier=self._depth_multiplier,
-              min_depth=self._min_depth,
-              insert_1x1_conv=True,
-              image_features=image_features)
+      with slim.arg_scope(self._conv_hyperparams_fn()):
+        feature_maps = feature_map_generators.multi_resolution_feature_maps(
+            feature_map_layout=feature_map_layout,
+            depth_multiplier=self._depth_multiplier,
+            min_depth=self._min_depth,
+            insert_1x1_conv=True,
+            image_features=image_features)
 
     return feature_maps.values()
+
