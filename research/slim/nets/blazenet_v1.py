@@ -120,7 +120,7 @@ slim = tf.contrib.slim
 Conv = namedtuple('Conv', ['kernel', 'stride', 'depth'])
 DepthSepConv = namedtuple('DepthSepConv', ['kernel', 'stride', 'depth'])
 
-# MOBILENETV1_CONV_DEFS specifies the MobileNet body
+# BLAZENETV1_CONV_DEFS specifies the BlazeNet body
 BLAZENETV1_CONV_DEFS = [
     Conv(kernel=[3, 3], stride=2, depth=24),         ## 0
     ## single blaze
